@@ -46,7 +46,7 @@ The existing GUI suite needs PySide6:
 python tests/test_gui_headless.py
 ```
 
-The first two suites were run during preparation. The GUI suite wasn't run because PySide6 isn't installed in the analysis Python environment. The patch doesn't edit GUI or auto-switch source, but that is not a substitute for a full GUI and hardware test.
+All three suites have now passed. The GUI suite was run in an isolated Python 3.12 environment with PySide6 6.12.0 and hardware access mocked out. It exercised the main window, overlay, profile matching/debounce/fallback, macros and connection handling. This does not substitute for a mouse hardware test.
 
 ## Working in Codex
 
