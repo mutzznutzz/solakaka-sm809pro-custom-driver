@@ -29,7 +29,7 @@ The wheel values come from Robin's working official profile after Restore. Stati
 3. Export the working official profile before a hardware trial. Test one side-button remap, wheel up/down and middle click first. Then test two profiles and per-app switching, including the overlay.
 4. Resolve the licence questions in [RELEASE_AND_FEATURES.md](RELEASE_AND_FEATURES.md) before redistributing.
 
-Robin created the GitHub fork. The prepared changes are on a separate development branch for review. No pull request or executable release has been created. No installed manufacturer files or mouse settings were modified. No patched executable has been built or launched.
+Robin created the GitHub fork. The prepared changes are on a separate development branch for review. No pull request or public executable release has been created. No installed manufacturer files or mouse settings were modified. A portable test executable has been built and its hardware-disabled startup test has passed; normal operation against the mouse still needs testing.
 
 ## Offline tests
 
@@ -52,4 +52,18 @@ All three suites have now passed. The GUI suite was run in an isolated Python 3.
 
 Open this folder as the project. Read this file, CAPTURE_GUIDE.md and RELEASE_AND_FEATURES.md first. Review the git diff. Keep `NUM_BUTTONS=16`; the wheel entries are additional protocol slots, not two new physical GUI buttons. Never include the official installer or vendor DLLs/assets in a public build. Do not publish a fixed binary until permission/licensing and the hardware validation are resolved.
 
-Build instructions for the upstream app are still in README.md. Build dependencies include PySide6, hidapi and PyInstaller. Installation/building was not performed as part of this preparation.
+Build dependencies are PySide6, hidapi and PyInstaller. Use the clean build command below rather than invoking PyInstaller with an inherited system PATH.
+
+## Packaging correction
+
+The first portable build failed to import QtWidgets. Static dependency inspection found that PyInstaller had bundled Poppler's unrelated `icuuc.dll` from the inherited PATH; it lacked 20 symbols required by Qt6Core. The source GUI tests used Windows' compatible ICU and therefore passed.
+
+Use `python tools/build_test.py` (or `build_exe.bat`) to build with a clean DLL search path. This avoids collecting unrelated libraries from installed tools. The output is `dist/wheel-fix-test-v2/SM809Pro.exe`.
+
+The packaged application now has a hardware-disabled startup test:
+
+```powershell
+.\SM809Pro.exe --self-test --self-test-result startup-result.json
+```
+
+It creates and renders the real main window using temporary profiles, verifies the overlay exists, disables HID access and exits. Add `--self-test-native` to use the Windows Qt platform rather than offscreen rendering. A successful test writes `"ok": true` in the JSON result. It does not validate mouse writes. The rebuilt v2 executable passed this self-test with `ok=true`, `hardware_access=disabled` and `overlay_present=true`.

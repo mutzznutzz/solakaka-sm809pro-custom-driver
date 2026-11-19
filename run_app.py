@@ -9,6 +9,12 @@ a second copy -- it signals the running instance to show its window and exits.
 """
 import sys
 
+# Test the actual packaged Qt loader before importing the normal entry point.
+# This path never starts the HID controller or uses the user's saved profiles.
+if __name__ == "__main__" and "--self-test" in sys.argv:
+    from app.frozen_smoke import main as smoke_main
+    raise SystemExit(smoke_main())
+
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
