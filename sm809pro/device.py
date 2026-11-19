@@ -72,7 +72,7 @@ def detect_modes(vid=P.VID):
         if v == vid:
             if p == P.PID_WIRELESS:
                 return "2.4GHz"
-            if p == P.PID_WIRED:
+            if p in P.WIRED_PIDS:
                 return "wired"
         return "bluetooth"
 
@@ -218,7 +218,7 @@ class SM809Pro:
     def _open_devs(self, devs, pid, connection=None, configurable=True) -> bool:
         self.connection = connection or (
             "2.4GHz" if pid == P.PID_WIRELESS
-            else "wired" if pid == P.PID_WIRED else "bluetooth")
+            else "wired" if pid in P.WIRED_PIDS else "bluetooth")
         self.configurable = configurable
         tgt = pick_control_interface(devs)
         self.interface_info = tgt
@@ -426,19 +426,21 @@ class SM809Pro:
         data = bytes([1 if angle_snap else 0, 1 if motion_sync else 0, 1 if ripple else 0])
         return self.send_command(P.CMD_SENSOR_FLAGS, 0x01, data)
 
-    # -- keys (verified physical mapping + 9/7 packet split) ------------------
+    # -- keys (16 physical buttons + 2 wheel entries; 9/9 packet split) -------
     def set_keys(self, codes_by_physical) -> bool:
         """
         codes_by_physical: 16-entry list indexed by 0-based PHYSICAL button.
-        Sends the full map as two packets exactly like GamingMS.exe sub_437D00.
+        Sends 18 wire slots in two packets of nine. The last two restore normal
+        wheel rotation; leaving them as FF padding disables scrolling on 809E.
+        Physical-button numbering and the 16-entry stored profile stay unchanged.
         """
-        slots = A.physical_to_slots(codes_by_physical)
+        slots = A.physical_to_slots(codes_by_physical) + list(A.WHEEL_ROTATION_DEFAULTS)
         d1 = bytearray()
         for s in range(0, A.KEYS_SPLIT):
             d1 += bytes(slots[s])
         ok1 = self.send_command(P.CMD_KEYS, A.KEYS_SUBCMD_1, bytes(d1))
         d2 = bytearray()
-        for s in range(A.KEYS_SPLIT, A.NUM_BUTTONS):
+        for s in range(A.KEYS_SPLIT, len(slots)):
             d2 += bytes(slots[s])
         ok2 = self.send_command(P.CMD_KEYS, A.KEYS_SUBCMD_2, bytes(d2))
         return ok1 and ok2

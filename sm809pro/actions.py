@@ -12,6 +12,12 @@ Action classes:
 
 NUM_BUTTONS = 16
 
+# The wire map has two additional entries after the 16 physical buttons.
+# Confirmed in GamingMS.exe V2.1.17 and the restored 04F3:809E profile:
+# Key16Value=102000 (Wheel Up), Key17Value=104000 (Wheel Down).
+# Keep these separate from NUM_BUTTONS so GUI/profile/macro indices stay stable.
+WHEEL_ROTATION_DEFAULTS = ((0x10, 0x20, 0x00), (0x10, 0x40, 0x00))
+
 # --- Modifier mask bits for keyboard combos (type 0x70) ---------------------
 MOD_CTRL = 0x01
 MOD_SHIFT = 0x02
@@ -159,7 +165,7 @@ PERMUTE = [11, 12, 13, 14, 15, 9, 10, 0, 1, 2, 3, 4, 5, 8, 6, 7]
 PHYS_TO_SLOT = {PERMUTE[s] + 1: s for s in range(NUM_BUTTONS)}  # 1-based phys -> slot
 
 # Packet split (from GamingMS.exe sub_437D00): packet 1 = slots 0-8 (subcmd 2,
-# 27 data bytes), packet 2 = slots 9-15 (subcmd 18, 21 data bytes).
+# 27 data bytes), packet 2 = slots 9-17 (subcmd 18, 27 data bytes).
 KEYS_SPLIT = 9
 KEYS_SUBCMD_1 = 0x02
 KEYS_SUBCMD_2 = 18
