@@ -126,6 +126,7 @@ ACTION_TREE = {
         ("Left Button", A.BTN["left"]), ("Right Button", A.BTN["right"]),
         ("Middle Button", A.BTN["middle"]), ("Forward", A.BTN["forward"]),
         ("Backward", A.BTN["back"]),
+        ("Wheel Up", A.BTN["wheel_up"]), ("Wheel Down", A.BTN["wheel_down"]),
     ],
     "DPI": [
         ("DPI +", A.BTN["dpi_up"]), ("DPI -", A.BTN["dpi_down"]),

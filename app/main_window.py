@@ -35,6 +35,7 @@ from .autoswitch import AutoSwitcher
 from .widgets.overlay import Overlay, AlertOverlay, POSITIONS, POSITION_LABELS
 from .paths import resource_path
 from .widgets.action_picker import set_macro_resolver
+from .dpi_state import enabled_indices, wire_config
 
 # nav order requested by the user
 NAV_ITEMS = ["Buttons", "Macro", "DPI", "Lighting", "Performance", "Auto-Switch",
@@ -127,6 +128,7 @@ class TopBar(QFrame):
 
     def set_connection(self, info):
         conn = info.get("connection", "?")
+        self._connection_mode = conn
         label = {"2.4GHz": "2.4 GHz", "wired": "USB Wired", "bluetooth": "Bluetooth"}.get(conn, conn)
         self.conn_pill.setText(f"● {label}")
         self.conn_pill.setStyleSheet(self._conn_style(theme.GOOD))
@@ -159,6 +161,10 @@ class TopBar(QFrame):
         self.conn_pill.setToolTip(msg)
 
     def set_battery(self, percent, charging=False):
+        if getattr(self, "_connection_mode", None) == "wired":
+            self.battery.setText("USB powered")
+            self.battery.setStyleSheet(f"color: {theme.ACCENT_2};")
+            return
         if percent is None:
             self.battery.setText("")
             return
@@ -305,6 +311,7 @@ class MainWindow(QMainWindow):
         self.dpi_panel.apply_requested.connect(self._apply_dpi)
         self.dpi_panel.active_dpi_requested.connect(self._apply_active_dpi)
         self.buttons_panel.apply_requested.connect(self._apply_buttons)
+        self.buttons_panel.wheel_requested.connect(self._apply_wheel)
         self.lighting_panel.apply_requested.connect(self._apply_lighting)
         self.performance_panel.polling_changed.connect(self._apply_polling)
         self.performance_panel.lod_changed.connect(self._apply_lod)
@@ -324,6 +331,8 @@ class MainWindow(QMainWindow):
         self.profiles_panel.import_requested.connect(self._profile_import_psf)
 
         self._charging = False
+        self._connection_mode = None
+        self._pending_rates = []
         self._battery = None
 
         # debounce a device re-sync when a bound macro's body is edited
@@ -540,7 +549,7 @@ class MainWindow(QMainWindow):
     def _check_battery_alerts(self, pct):
         """Persistent, manually-dismissed alerts: low at 20%/10% (once per
         downward crossing, re-armed on recharge) + fully-charged while charging."""
-        if pct is None:
+        if pct is None or self._connection_mode == "wired":
             return
         # keep only thresholds we're still at/below (rising back above re-arms them)
         self._batt_alerted = {t for t in self._batt_alerted if pct <= t}
@@ -592,9 +601,10 @@ class MainWindow(QMainWindow):
         # push to the device (guarded so a failed/absent device just no-ops)
         if changed("dpi"):
             dpi = config.get("dpi", {})
-            self.ctrl.call("set_dpi", dpi.get("values", []),
-                           selected=dpi.get("selected", 0), colors=dpi.get("colors"))
+            values, colors, selected = wire_config(dpi)
+            self.ctrl.call("set_dpi", values, selected=selected, colors=colors)
         if changed("polling_hz"):
+            self._pending_rates.append((config.get("polling_hz", 500), False))
             self.ctrl.call("set_polling_rate", config.get("polling_hz", 500))
         if changed("lod_mm"):
             self.ctrl.call("set_lod", config.get("lod_mm", 2))
@@ -613,9 +623,10 @@ class MainWindow(QMainWindow):
                            motion_sync=sn.get("motion_sync", True),
                            ripple=sn.get("ripple", False))
         # buttons (+ any referenced macros) last
-        if changed("buttons"):
+        if changed("buttons") or changed("wheel"):
             codes, macros = self._resolve_bindings(config.get("buttons", []))
-            self.ctrl.call("apply_macro_buttons", codes, macros)
+            kwargs = {"wheel_codes": config["wheel"]} if "wheel" in config else {}
+            self.ctrl.call("apply_macro_buttons", codes, macros, **kwargs)
 
     def _seed_panels(self, config):
         """Set every panel from a config dict WITHOUT emitting apply signals."""
@@ -624,13 +635,15 @@ class MainWindow(QMainWindow):
             dpi = config.get("dpi", {})
             self.buttons_panel.set_codes(config.get("buttons", []))
             self.buttons_panel.refresh_labels()
+            self.buttons_panel.set_wheel(config.get("wheel", A.WHEEL_ROTATION_DEFAULTS))
             self.dpi_panel.set_values(dpi.get("values", []),
                                       dpi.get("colors"),
-                                      enabled_count=dpi.get("enabled_count"))
+                                      enabled_indices=enabled_indices(dpi))
             self.dpi_panel.set_active_stage(dpi.get("selected", 0))
             light = config.get("lighting", {})
             self.lighting_panel.set_state(light.get("mode", 2),
-                                          tuple(light.get("color", (0, 0, 255))))
+                                          tuple(light.get("color", (0, 0, 255))),
+                                          custom=light.get("custom", False))
             pw = config.get("power", {})
             sn = config.get("sensor", {})
             self.performance_panel.set_state(
@@ -762,7 +775,15 @@ class MainWindow(QMainWindow):
 
     # -- controller handlers --------------------------------------------------
     def _on_connected(self, info):
+        self._connection_mode = info.get("connection")
+        self._battery = None
+        self._batt_alerted.clear()
+        self._full_alerted = False
+        self.alert_overlay.hide()
+        self._prev_dpi_level = None
+        self._prev_rate = None
         self.topbar.set_connection(info)
+        self.topbar.set_battery(None)
         # Wired is always "charging". Over 2.4GHz, charging is reported live by
         # the status push (see _on_charging); start from not-charging there.
         self._charging = (info.get("connection") == "wired")
@@ -776,9 +797,13 @@ class MainWindow(QMainWindow):
         self.topbar.set_error(msg)
 
     def _on_dpi_push(self, level):
-        self.dpi_panel.set_active_stage(level)
-        if 0 <= level < len(self.dpi_panel.rows):
-            dpi = self.dpi_panel.rows[level].dpi()
+        indices = self.dpi_panel._enabled_indices()
+        if 0 <= level < len(indices):
+            absolute = indices[level]
+            self.dpi_panel.set_active_stage(absolute)
+            if self._current_config is not None:
+                self._current_config["dpi"]["selected"] = absolute
+            dpi = self.dpi_panel.rows[absolute].dpi()
             self.topbar.set_dpi_readout(f"{dpi}")
             self._cur_dpi = dpi
             # flash the HUD on a real DPI change (skip the first push at connect)
@@ -852,33 +877,35 @@ class MainWindow(QMainWindow):
                                   QSystemTrayIcon.Warning, 2500)
 
     def _on_command_done(self, method, ok):
-        pass
+        if method == "set_polling_rate" and self._pending_rates:
+            hz, show = self._pending_rates.pop(0)
+            if show and self._overlay_enabled:
+                self.overlay.flash_lines([("Polling rate sent" if ok else "Polling rate failed", f"{hz} Hz")])
 
     # -- actions --------------------------------------------------------------
     def _apply_dpi(self, dpi_values, colors, selected):
         self.ctrl.call("set_dpi", dpi_values, selected=selected, colors=colors)
-        self._update_config("dpi", {
-            "values": list(dpi_values),
-            "colors": [list(c) for c in colors],
-            "enabled_count": len(dpi_values),
-            "selected": selected,
-        })
+        self._update_config("dpi", self.dpi_panel.profile_state())
 
     def _apply_active_dpi(self, dpi_values, selected):
         # switch the live DPI stage: re-send the class-0x02 DPI config pair with
         # the new selected stage (confirmed by USB capture). No color write.
         self.ctrl.call("set_active_dpi", dpi_values, selected)
         if self._current_config is not None and not self._loading_profile:
-            dpi = dict(self._current_config.get("dpi", {}))
-            dpi["selected"] = selected
-            self._update_config("dpi", dpi)
+            self._update_config("dpi", self.dpi_panel.profile_state())
 
     def _apply_buttons(self, bindings):
         codes, macros = self._resolve_bindings(bindings)
-        self.ctrl.call("apply_macro_buttons", codes, macros)
+        cfg = self._current_config or {}
+        kwargs = {"wheel_codes": cfg["wheel"]} if "wheel" in cfg else {}
+        self.ctrl.call("apply_macro_buttons", codes, macros, **kwargs)
         # persist the raw bindings (tuples and/or macro dicts) into the profile
         self._update_config("buttons", [list(b) if isinstance(b, tuple) else b
                                         for b in bindings])
+
+    def _apply_wheel(self, codes):
+        self._update_config("wheel", [list(c) for c in codes])
+        self._apply_buttons(self.buttons_panel.bindings())
 
     def _resolve_bindings(self, bindings):
         """Turn the 16-entry button list (3-byte tuples and/or {'macro':id,..}
@@ -936,9 +963,14 @@ class MainWindow(QMainWindow):
 
     def _apply_lighting(self, mode, color):
         self.ctrl.call("set_lighting", mode, color=color)
-        self._update_config("lighting", {"mode": mode, "color": list(color)})
+        self._update_config("lighting", {"mode": mode, "color": list(color),
+                                          "custom": self.lighting_panel.is_custom})
 
     def _apply_polling(self, hz):
+        # Acknowledge the click immediately; live telemetry remains authoritative.
+        if self._overlay_enabled:
+            self.overlay.flash_lines([("Applying polling rate", f"{hz} Hz")])
+        self._pending_rates.append((hz, True))
         self.ctrl.call("set_polling_rate", hz)
         self._update_config("polling_hz", hz)
 
@@ -985,7 +1017,7 @@ class MainWindow(QMainWindow):
     def _tray_icon(self):
         """The app icon for the tray; falls back to a painted accent dot if the
         icon file can't be loaded."""
-        ic = app_icon()
+        ic = QIcon(resource_path("images", "tray-icon.ico"))
         if not ic.isNull():
             return ic
         pm = QPixmap(32, 32)

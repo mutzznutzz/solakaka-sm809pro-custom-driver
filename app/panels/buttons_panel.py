@@ -15,7 +15,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QFrame, QScrollArea, QSizePolicy,
+    QFrame, QScrollArea, QSizePolicy, QMessageBox, QSpinBox, QCheckBox,
 )
 
 from .. import theme
@@ -121,6 +121,7 @@ class MouseReference(QFrame):
 class ButtonsPanel(QWidget):
     """16-button remap panel: two columns of rows + a mouse reference image."""
     apply_requested = Signal(object)
+    wheel_requested = Signal(object)
     reset_requested = Signal()
 
     def __init__(self, codes=None, get_macros=None):
@@ -174,6 +175,45 @@ class ButtonsPanel(QWidget):
                 row.changed.connect(self._on_button_changed)
                 self.rows[phys] = row
                 right.addWidget(row)
+        right.addWidget(_group_label("Wheel Rotation"))
+        self._wheel = list(A.WHEEL_ROTATION_DEFAULTS)
+        self.wheel_buttons = []
+        for i, name in enumerate(("Scroll Up", "Scroll Down")):
+            button = QPushButton()
+            button.clicked.connect(lambda checked=False, index=i: self._edit_wheel(index))
+            self.wheel_buttons.append(button)
+            right.addWidget(QLabel(name))
+            right.addWidget(button)
+        normal = QPushButton("Restore normal scrolling")
+        normal.clicked.connect(self._reset_wheel)
+        right.addWidget(normal)
+        self.set_wheel(A.WHEEL_ROTATION_DEFAULTS)
+        hint = QLabel("Wheel rotation is separate from middle-click (14).")
+        hint.setWordWrap(True)
+        hint.setProperty("panelSubtitle", "true")
+        right.addWidget(hint)
+        lines = QHBoxLayout()
+        self.scroll_lines = QSpinBox()
+        self.scroll_lines.setRange(1, 100)
+        self.scroll_lines.setValue(3)
+        self.scroll_page = QCheckBox("One page")
+        try:
+            import ctypes
+            value = ctypes.c_uint()
+            if ctypes.windll.user32.SystemParametersInfoW(0x68, 0, ctypes.byref(value), 0):
+                self.scroll_page.setChecked(value.value == 0xffffffff)
+                if value.value != 0xffffffff:
+                    self.scroll_lines.setValue(value.value)
+        except (AttributeError, OSError):
+            pass
+        lines.addWidget(QLabel("Lines"))
+        lines.addWidget(self.scroll_lines)
+        lines.addWidget(self.scroll_page)
+        right.addLayout(lines)
+        apply_lines = QPushButton("Apply scroll amount to Windows")
+        apply_lines.setToolTip("System-wide setting for all mice. Not stored in mouse profiles.")
+        apply_lines.clicked.connect(self._apply_scroll_lines)
+        right.addWidget(apply_lines)
         right.addStretch(1)
         right_w = QWidget(); right_w.setLayout(right)
         cols.addWidget(right_w, 1)
@@ -187,6 +227,35 @@ class ButtonsPanel(QWidget):
     def _on_button_changed(self, _phys):
         # auto-apply: a button pick is discrete, so push immediately
         self._emit_apply()
+
+    def set_wheel(self, codes):
+        self._wheel = [tuple(c) for c in codes]
+        for button, code in zip(self.wheel_buttons, self._wheel):
+            button.setText(describe_action(code))
+
+    def _edit_wheel(self, index):
+        result = pick_action(self._wheel[index], self.window(), macros=[])
+        if result is None:
+            return
+        if isinstance(result, dict) or result[0] == 0x90 or tuple(result) == A.BTN['run_app']:
+            QMessageBox.information(self, "Wheel action", "Choose a key combination, mouse action or media action. Wheel macros and app launchers aren't supported here yet.")
+            return
+        self._wheel[index] = tuple(result)
+        self.set_wheel(self._wheel)
+        self.wheel_requested.emit(self._wheel.copy())
+
+    def _reset_wheel(self):
+        self.set_wheel(A.WHEEL_ROTATION_DEFAULTS)
+        self.wheel_requested.emit(self._wheel.copy())
+
+    def _apply_scroll_lines(self):
+        try:
+            import ctypes
+            amount = 0xffffffff if self.scroll_page.isChecked() else self.scroll_lines.value()
+            if not ctypes.windll.user32.SystemParametersInfoW(0x69, amount, None, 3):
+                raise OSError("Windows did not accept the setting")
+        except (AttributeError, OSError) as error:
+            QMessageBox.warning(self, "Scroll amount", str(error))
 
     def _emit_apply(self):
         codes = [self.rows[p].code() for p in range(1, A.NUM_BUTTONS + 1)]

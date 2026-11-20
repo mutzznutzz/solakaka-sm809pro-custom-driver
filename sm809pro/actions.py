@@ -97,6 +97,8 @@ BTN = {
     "middle":  (0x10, 0x04, 0x00),
     "forward": (0x10, 0x10, 0x00),
     "back":    (0x10, 0x08, 0x00),
+    "wheel_up": (0x10, 0x20, 0x00),
+    "wheel_down": (0x10, 0x40, 0x00),
     # fire (0x30)
     "fire":    fire(50, 0),
     "triple":  (0x30, 0x32, 0x03),     # "Three Click"
@@ -141,6 +143,7 @@ BTN = {
 
 # Human labels for the named actions (for GUI dropdowns).
 ACTION_LABELS = {
+    "wheel_up": "Wheel Up", "wheel_down": "Wheel Down",
     "left": "Left Button", "right": "Right Button", "middle": "Middle Button",
     "forward": "Forward", "back": "Backward", "fire": "Fire Key",
     "triple": "Three Click", "dpi_up": "DPI+", "dpi_down": "DPI-",

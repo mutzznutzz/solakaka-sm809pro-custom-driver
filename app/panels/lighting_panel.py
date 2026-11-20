@@ -1,10 +1,9 @@
 """
 app.panels.lighting_panel -- the side-button lighting configuration panel.
 
-Mirrors the official app's "Side Button Lighting": a single mode selector and
-nothing else. The official app exposes no color picker, and on this firmware the
-single-color modes (Red/Green/Blue Full) use their own predefined colors -- a
-custom RGB does not take effect (hardware-confirmed). So we expose only the mode.
+Preset effects plus an experimental RGB picker. The original author's firmware
+ignored RGB for solid modes. The picker uses the existing RGB fields, without
+assuming another firmware supports them or introducing undocumented commands.
 
 Brightness/speed/direction are likewise NOT exposed -- on this firmware they have
 no observable effect (see LIGHTING_NOTE.md). Changes auto-apply to the mouse.
@@ -12,13 +11,14 @@ no observable effect (see LIGHTING_NOTE.md). Changes auto-apply to the mouse.
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QFrame, QSizePolicy,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QFrame, QSizePolicy, QPushButton,
 )
 
 from .. import theme
 from ..widgets.controls import Card
 from sm809pro import protocol as P
 from sm809pro import defaults as _D
+from ..widgets.color_picker import pick_color
 
 
 def _hline():
@@ -37,6 +37,7 @@ class LightingPanel(QWidget):
     def __init__(self, mode=None, color=None):
         super().__init__()
         self._suspend = False
+        self.is_custom = False
         self._mode = _D.LIGHTING_MODE if mode is None else mode
         self._color = tuple(color) if color else tuple(_D.LIGHTING_COLOR)
 
@@ -62,9 +63,17 @@ class LightingPanel(QWidget):
         self.mode_combo = QComboBox()
         for m in sorted(P.LIGHTING_MODES):
             self.mode_combo.addItem(P.LIGHTING_MODES[m], m)
+        self.mode_combo.addItem("Custom colour (experimental)", 100)
         self.mode_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         mode_col.addWidget(self.mode_combo)
+        self.color_button = QPushButton("Choose custom colour")
+        self.color_button.clicked.connect(self._choose_color)
+        mode_col.addWidget(self.color_button)
+        self.custom_note = QLabel("Custom RGB depends on mouse firmware. Some versions use a preset colour instead.")
+        self.custom_note.setWordWrap(True)
+        self.custom_note.setProperty("cardHint", "true")
+        mode_col.addWidget(self.custom_note)
         card.add(mode_col)
         root.addWidget(card)
         root.addStretch(1)
@@ -75,7 +84,7 @@ class LightingPanel(QWidget):
     def _load(self, mode):
         self._suspend = True
         try:
-            idx = self.mode_combo.findData(mode)
+            idx = self.mode_combo.findData(100 if self.is_custom else mode)
             if idx >= 0:
                 self.mode_combo.setCurrentIndex(idx)
             self._mode = mode
@@ -86,12 +95,29 @@ class LightingPanel(QWidget):
     def _on_mode_changed(self, _idx):
         if self._suspend:
             return
+        if self.mode_combo.currentData() == 100:
+            self._choose_color()
+            return
+        self.is_custom = False
         self._mode = self.mode_combo.currentData()
         self.apply_requested.emit(self._mode, self._color)
 
+    def _choose_color(self):
+        color = pick_color(self._color, self.window())
+        if color is None:
+            self._load(self._mode)
+            return
+        self._color = tuple(color)
+        self.is_custom = True
+        self._load(8)
+        self.color_button.setText("Custom colour: #{:02X}{:02X}{:02X}".format(*color))
+        self.apply_requested.emit(8, self._color)
+
     # -- external -------------------------------------------------------------
-    def set_state(self, mode, color=None):
+    def set_state(self, mode, color=None, custom=False):
         """Load mode from outside (e.g. factory restore) without applying."""
         if color:
             self._color = tuple(color)
+        self.is_custom = custom
+        self.color_button.setText("Custom colour: #{:02X}{:02X}{:02X}".format(*self._color) if custom else "Choose custom colour")
         self._load(mode)

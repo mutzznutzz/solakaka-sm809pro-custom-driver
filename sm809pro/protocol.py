@@ -9,6 +9,8 @@ the packet builder, so it is trivially testable and portable.
 # --- Identity ---------------------------------------------------------------
 VID = 0x04F3                 # Elan
 PID_WIRELESS = 0x026F        # 2.4GHz dongle
+PID_WIRELESS_809F = 0x809F   # Receiver recorded by Windows for Robin's mouse
+WIRELESS_PIDS = frozenset((PID_WIRELESS, PID_WIRELESS_809F))
 PID_WIRED = 0x026E           # USB wired
 PID_WIRED_809E = 0x809E      # Robin's USB-cable SM809 Pro, revision 0109
 WIRED_PIDS = frozenset((PID_WIRED, PID_WIRED_809E))

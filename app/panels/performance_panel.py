@@ -108,7 +108,8 @@ class PerformancePanel(QWidget):
         cap.setProperty("cardHint", "true")
         pwr_card.add(cap)
 
-        self.move_wake = QCheckBox("Keep motion wake up")
+        self.move_wake = QCheckBox("Wake mouse on movement")
+        self.move_wake.setToolTip("Allow mouse movement to wake the mouse from wireless sleep. Behaviour depends on firmware.")
         self.move_wake.setChecked(_D.POWER_MOVE_WAKEUP)
         self.move_wake.toggled.connect(self._on_power_toggle)
         pwr_card.add(self.move_wake)

@@ -28,7 +28,7 @@ def find_status_interface(vid=P.VID, pid=None):
     """
     if hid is None:
         return None
-    pids = [pid] if pid else [P.PID_WIRELESS, P.PID_WIRED]
+    pids = [pid] if pid else sorted(P.WIRELESS_PIDS | P.WIRED_PIDS)
     for p in pids:
         devs = hid.enumerate(vid, p)
         zero_a = [d for d in devs if d.get("usage_page") == 0x000A]

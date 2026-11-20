@@ -246,6 +246,9 @@ class DpiPanel(QWidget):
         # auto-apply (debounced); ignore edits we triggered programmatically
         if self._suspend_apply:
             return
+        if not self._enabled_indices():
+            self.rows[self._selected if 0 <= self._selected < 8 else 0].toggle.setChecked(True)
+            return
         self._apply_timer.start()
 
     def _on_activate_requested(self, abs_index):
@@ -295,7 +298,14 @@ class DpiPanel(QWidget):
         for i, row in enumerate(self.rows):
             row.set_active(i == level)
 
-    def set_values(self, dpi, colors=None, enabled_count=None):
+    def profile_state(self):
+        indices = self._enabled_indices()
+        return dict(values=[r.dpi() for r in self.rows],
+                    colors=[list(r.rgb()) for r in self.rows],
+                    enabled_count=len(indices), enabled_indices=indices,
+                    selected=self._selected if self._selected in indices else indices[0])
+
+    def set_values(self, dpi, colors=None, enabled_count=None, enabled_indices=None):
         """Set the stage DPI values (and optionally colors) from outside, e.g.
         after a factory restore. Does NOT auto-apply (the caller pushes)."""
         self._suspend_apply = True
@@ -308,9 +318,9 @@ class DpiPanel(QWidget):
                     row.value.setText(str(row._snap(dpi[i])))
                 if colors and i < len(colors):
                     row.swatch.set_rgb(colors[i])
-                if enabled_count is not None:
+                if enabled_count is not None or enabled_indices is not None:
                     row.toggle.blockSignals(True)
-                    row.toggle.setChecked(i < enabled_count)
+                    row.toggle.setChecked(i in enabled_indices if enabled_indices is not None else i < enabled_count)
                     row.toggle.blockSignals(False)
                     row._sync_enabled()
         finally:

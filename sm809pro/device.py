@@ -70,7 +70,7 @@ def detect_modes(vid=P.VID):
 
     def classify(v, p):
         if v == vid:
-            if p == P.PID_WIRELESS:
+            if p in P.WIRELESS_PIDS:
                 return "2.4GHz"
             if p in P.WIRED_PIDS:
                 return "wired"
@@ -217,7 +217,7 @@ class SM809Pro:
 
     def _open_devs(self, devs, pid, connection=None, configurable=True) -> bool:
         self.connection = connection or (
-            "2.4GHz" if pid == P.PID_WIRELESS
+            "2.4GHz" if pid in P.WIRELESS_PIDS
             else "wired" if pid in P.WIRED_PIDS else "bluetooth")
         self.configurable = configurable
         tgt = pick_control_interface(devs)
@@ -427,14 +427,17 @@ class SM809Pro:
         return self.send_command(P.CMD_SENSOR_FLAGS, 0x01, data)
 
     # -- keys (16 physical buttons + 2 wheel entries; 9/9 packet split) -------
-    def set_keys(self, codes_by_physical) -> bool:
+    def set_keys(self, codes_by_physical, wheel_codes=None) -> bool:
         """
         codes_by_physical: 16-entry list indexed by 0-based PHYSICAL button.
         Sends 18 wire slots in two packets of nine. The last two restore normal
         wheel rotation; leaving them as FF padding disables scrolling on 809E.
         Physical-button numbering and the 16-entry stored profile stay unchanged.
         """
-        slots = A.physical_to_slots(codes_by_physical) + list(A.WHEEL_ROTATION_DEFAULTS)
+        wheel = A.WHEEL_ROTATION_DEFAULTS if wheel_codes is None else wheel_codes
+        if len(wheel) != 2 or any(len(c) != 3 or any(not isinstance(v, int) or not 0 <= v <= 255 for v in c) for c in wheel):
+            raise ValueError("wheel mappings must contain two three-byte actions")
+        slots = A.physical_to_slots(codes_by_physical) + list(wheel)
         d1 = bytearray()
         for s in range(0, A.KEYS_SPLIT):
             d1 += bytes(slots[s])
@@ -449,7 +452,7 @@ class SM809Pro:
         """Restore the factory-default button layout."""
         return self.set_keys(A.default_button_codes())
 
-    def apply_macro_buttons(self, codes, macros=None) -> bool:
+    def apply_macro_buttons(self, codes, macros=None, wheel_codes=None) -> bool:
         """Upload the referenced macros, then write the 16-button map (one op).
 
         `codes` is the final 16-entry list of 3-byte action tuples (any macro
@@ -458,7 +461,7 @@ class SM809Pro:
         data is resident before the key map references it. This is the
         upload-on-assign path: macros reach the device only when a button binds
         them."""
-        ok = self.set_keys(codes)           # KEYS FIRST (matches official app order from pcap)
+        ok = self.set_keys(codes, wheel_codes=wheel_codes)
         if macros:
             ok = self.upload_macros(macros) and ok
         return ok
