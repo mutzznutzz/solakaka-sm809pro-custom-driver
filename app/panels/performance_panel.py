@@ -18,6 +18,7 @@ from .. import theme
 from ..widgets.controls import Card, Segmented
 from sm809pro import protocol as P
 from sm809pro import defaults as _D
+from .lighting_panel import LightingPanel
 
 # Only expose polling rates the unit actually supports (caps at 1000 on this
 # hardware). The enum has higher values but they're unavailable here.
@@ -55,11 +56,12 @@ class PerformancePanel(QWidget):
         root.setContentsMargins(28, 24, 28, 24)
         root.setSpacing(18)
 
-        title = QLabel("Performance")
+        title = QLabel("Performance and Lighting")
         title.setProperty("panelTitle", "true")
         root.addWidget(title)
         sub = QLabel("Polling rate, lift-off distance, power management, and "
-                     "sensor tuning. Changes apply to the mouse automatically.")
+                     "sensor tuning and side lighting. Changes apply automatically.")
+        sub.setWordWrap(True)
         sub.setProperty("panelSubtitle", "true")
         root.addWidget(sub)
         root.addWidget(_hline())
@@ -77,12 +79,25 @@ class PerformancePanel(QWidget):
                                  value=_D.POLLING_HZ)
         self.polling.changed.connect(self._on_polling)
         poll_card.add(self.polling)
+        self.polling_help = QLabel(
+            "125 Hz (8 ms): everyday use, lower wireless power use.\n"
+            "250 Hz (4 ms): general use and casual gaming.\n"
+            "500 Hz (2 ms): responsive gaming with a balance of speed and power.\n"
+            "1,000 Hz (1 ms): fastest updates available here, useful for fast-paced gaming.\n"
+            "Higher rates can use more battery and CPU. Intervals are between reports, not total input lag.")
+        self.polling_help.setWordWrap(True)
+        self.polling_help.setProperty("cardHint", "true")
+        poll_card.add(self.polling_help)
+        self.polling.setToolTip("How often the mouse reports movement to the computer. Higher rates mean shorter gaps between reports.")
+        for hz, button in self.polling._buttons.items():
+            button.setToolTip(f"{hz} reports per second, about {1000 / hz:g} ms between reports. Higher rates can use more wireless battery.")
         col.addWidget(poll_card)
 
         # --- Mouse LOD Height ---
-        lod_card = Card("MOUSE LOD HEIGHT")
+        lod_card = Card("LIFT-OFF DISTANCE (LOD)")
         self.lod = Segmented([("1mm", 1), ("2mm", 2)], value=_D.LOD_MM)
         self.lod.changed.connect(self._on_lod)
+        self.lod.setToolTip("Lift-off distance: how high you can lift the mouse before tracking stops. Lower values reduce cursor movement when repositioning it.")
         lod_card.add(self.lod)
         col.addWidget(lod_card)
 
@@ -92,6 +107,7 @@ class PerformancePanel(QWidget):
         srow.setSpacing(14)
         self.sleep = QSlider(Qt.Horizontal)
         self.sleep.setRange(SLEEP_MIN, SLEEP_MAX)
+        self.sleep.setToolTip("Minutes without activity before the mouse sleeps to save wireless battery. Set 0 to prevent automatic sleep.")
         self.sleep.setSingleStep(1)
         self.sleep.setPageStep(5)
         self.sleep.setValue(_D.POWER_SLEEP_MIN)
@@ -114,6 +130,7 @@ class PerformancePanel(QWidget):
         self.move_wake.toggled.connect(self._on_power_toggle)
         pwr_card.add(self.move_wake)
         self.move_light = QCheckBox("Lighting off while mouse moves")
+        self.move_light.setToolTip("Turn off side lighting during movement. Lighting can return when movement stops.")
         self.move_light.setChecked(_D.POWER_MOVE_LIGHTING)
         self.move_light.toggled.connect(self._on_power_toggle)
         pwr_card.add(self.move_light)
@@ -124,12 +141,15 @@ class PerformancePanel(QWidget):
         srow2 = QHBoxLayout()
         srow2.setSpacing(28)
         self.angle_snap = QCheckBox("Angle Snap")
+        self.angle_snap.setToolTip("Straighten small deviations in movement to help draw straight lines. Leave off if you want your exact hand movements for aiming.")
         self.angle_snap.setChecked(_D.SENSOR_ANGLE_SNAP)
         self.angle_snap.toggled.connect(self._on_sensor_toggle)
         self.motion_sync = QCheckBox("Motion Sync")
+        self.motion_sync.setToolTip("Align sensor readings with the mouse's reporting schedule for more consistent tracking. The feel depends on firmware.")
         self.motion_sync.setChecked(_D.SENSOR_MOTION_SYNC)
         self.motion_sync.toggled.connect(self._on_sensor_toggle)
         self.ripple = QCheckBox("Ripple Control")
+        self.ripple.setToolTip("Smooth sensor jitter, particularly at high DPI. Smoothing can soften movement or add a little delay.")
         self.ripple.setChecked(_D.SENSOR_RIPPLE)
         self.ripple.toggled.connect(self._on_sensor_toggle)
         for c in (self.angle_snap, self.motion_sync, self.ripple):
@@ -137,6 +157,9 @@ class PerformancePanel(QWidget):
         srow2.addStretch(1)
         sensor_card.add(srow2)
         col.addWidget(sensor_card)
+
+        self.lighting_panel = LightingPanel()
+        col.addWidget(self.lighting_panel)
 
         col.addStretch(1)
         scroll.setWidget(holder)

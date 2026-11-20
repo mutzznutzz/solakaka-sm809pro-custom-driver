@@ -70,6 +70,7 @@ class ButtonRow(QFrame):
         lay.addWidget(badge)
 
         self.action_btn = QPushButton(describe_action(self._code))
+        self.action_btn.setToolTip("Choose what this physical mouse button does in the current profile. Changes apply automatically.")
         self.action_btn.setObjectName("actionField")
         self.action_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.action_btn.clicked.connect(self._open_picker)
@@ -180,11 +181,13 @@ class ButtonsPanel(QWidget):
         self.wheel_buttons = []
         for i, name in enumerate(("Scroll Up", "Scroll Down")):
             button = QPushButton()
+            button.setToolTip("Choose the action sent for this wheel direction. This does not change middle-click.")
             button.clicked.connect(lambda checked=False, index=i: self._edit_wheel(index))
             self.wheel_buttons.append(button)
             right.addWidget(QLabel(name))
             right.addWidget(button)
         normal = QPushButton("Restore normal scrolling")
+        normal.setToolTip("Restore wheel-up and wheel-down actions only. Other button assignments and the Windows scroll amount stay unchanged.")
         normal.clicked.connect(self._reset_wheel)
         right.addWidget(normal)
         self.set_wheel(A.WHEEL_ROTATION_DEFAULTS)
@@ -195,8 +198,10 @@ class ButtonsPanel(QWidget):
         lines = QHBoxLayout()
         self.scroll_lines = QSpinBox()
         self.scroll_lines.setRange(1, 100)
+        self.scroll_lines.setToolTip("Windows-wide number of lines per wheel step, used by apps that follow the Windows scroll setting. Click Apply to save.")
         self.scroll_lines.setValue(3)
         self.scroll_page = QCheckBox("One page")
+        self.scroll_page.setToolTip("Request one page per wheel step instead of a line count. Click Apply to save this for Windows.")
         try:
             import ctypes
             value = ctypes.c_uint()

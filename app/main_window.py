@@ -24,7 +24,6 @@ from .controller import DeviceController
 from sm809pro import actions as A
 from .panels.dpi_panel import DpiPanel
 from .panels.buttons_panel import ButtonsPanel
-from .panels.lighting_panel import LightingPanel
 from .panels.performance_panel import PerformancePanel
 from .panels.macro_panel import MacroPanel
 from .panels.autoswitch_panel import AutoSwitchPanel
@@ -38,7 +37,7 @@ from .widgets.action_picker import set_macro_resolver
 from .dpi_state import enabled_indices, wire_config
 
 # nav order requested by the user
-NAV_ITEMS = ["Buttons", "Macro", "DPI", "Lighting", "Performance", "Auto-Switch",
+NAV_ITEMS = ["Buttons", "Macro", "DPI", "Performance and Lighting", "Auto-Switch",
              "Profiles"]
 
 
@@ -228,7 +227,7 @@ class MainWindow(QMainWindow):
         # ---- left rail: full-height surface; nav at top, reset near bottom ----
         rail = QFrame()
         rail.setObjectName("railFrame")
-        rail.setFixedWidth(180)
+        rail.setFixedWidth(212)
         rail.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         rail_lay = QVBoxLayout(rail)
         rail_lay.setContentsMargins(0, 0, 0, 0)
@@ -280,17 +279,16 @@ class MainWindow(QMainWindow):
         self.buttons_panel = ButtonsPanel(get_macros=self.store.all)
         self.macro_panel = MacroPanel(self.store)
         self.dpi_panel = DpiPanel()
-        self.lighting_panel = LightingPanel()
         self.performance_panel = PerformancePanel()
+        self.lighting_panel = self.performance_panel.lighting_panel
         self.autoswitch_panel = AutoSwitchPanel()
         self.profiles_panel = ProfilesPanel()
         self.stack.addWidget(self.buttons_panel)         # 0 Buttons
         self.stack.addWidget(self.macro_panel)            # 1 Macro
         self.stack.addWidget(self.dpi_panel)              # 2 DPI
-        self.stack.addWidget(self.lighting_panel)         # 3 Lighting
-        self.stack.addWidget(self.performance_panel)      # 4 Performance
-        self.stack.addWidget(self.autoswitch_panel)       # 5 Auto-Switch
-        self.stack.addWidget(self.profiles_panel)         # 6 Profiles
+        self.stack.addWidget(self.performance_panel)      # 3 Performance and Lighting
+        self.stack.addWidget(self.autoswitch_panel)       # 4 Auto-Switch
+        self.stack.addWidget(self.profiles_panel)         # 5 Profiles
         self.nav.setCurrentRow(0)
 
         # ---- controller ----
@@ -880,7 +878,7 @@ class MainWindow(QMainWindow):
         if method == "set_polling_rate" and self._pending_rates:
             hz, show = self._pending_rates.pop(0)
             if show and self._overlay_enabled:
-                self.overlay.flash_lines([("Polling rate sent" if ok else "Polling rate failed", f"{hz} Hz")])
+                self.overlay.flash_lines([("Polling setting sent" if ok else "Couldn't change polling rate", f"{hz} Hz")])
 
     # -- actions --------------------------------------------------------------
     def _apply_dpi(self, dpi_values, colors, selected):

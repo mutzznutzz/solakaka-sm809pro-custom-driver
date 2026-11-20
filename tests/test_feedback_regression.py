@@ -103,20 +103,19 @@ class FeedbackTests(unittest.TestCase):
         self.w._on_command_done('set_polling_rate', True)
         self.assertIn('APPLYING', self.w.overlay._lay.itemAt(0).widget().text())
         self.w._on_command_done('set_polling_rate', False)
-        self.assertIn('FAILED', self.w.overlay._lay.itemAt(0).widget().text())
+        self.assertIn("COULDN'T", self.w.overlay._lay.itemAt(0).widget().text())
 
-    def test_custom_lighting_picker_and_cancel(self):
+    def test_lighting_is_embedded_with_presets_only(self):
         panel = self.w.lighting_panel
-        with patch('app.panels.lighting_panel.pick_color', return_value=(17, 34, 51)):
-            panel._choose_color()
-        self.assertTrue(panel.is_custom)
-        self.assertEqual(self.w._current_config['lighting']['color'], [17, 34, 51])
-        self.assertEqual(self.calls[-1], ('set_lighting', (8,), dict(color=(17, 34, 51))))
-        panel.set_state(2, (1, 2, 3), custom=False)
-        with patch('app.panels.lighting_panel.pick_color', return_value=None):
-            panel.mode_combo.setCurrentIndex(panel.mode_combo.findData(100))
+        self.assertIs(panel, self.w.performance_panel.lighting_panel)
+        self.assertIs(self.w.stack.widget(3), self.w.performance_panel)
+        self.assertEqual(panel.mode_combo.findData(100), -1)
+        panel.set_state(8, (17, 34, 51), custom=True)
         self.assertFalse(panel.is_custom)
-        self.assertEqual(panel.mode_combo.currentData(), 2)
+        self.assertEqual(panel.mode_combo.currentData(), 8)
+        panel.mode_combo.setCurrentIndex(panel.mode_combo.findData(9))
+        self.assertEqual(self.calls[-1][0:2], ('set_lighting', (9,)))
+        self.assertFalse(self.w._current_config['lighting']['custom'])
 
 
 if __name__ == '__main__':

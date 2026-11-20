@@ -1,123 +1,39 @@
-"""
-app.panels.lighting_panel -- the side-button lighting configuration panel.
-
-Preset effects plus an experimental RGB picker. The original author's firmware
-ignored RGB for solid modes. The picker uses the existing RGB fields, without
-assuming another firmware supports them or introducing undocumented commands.
-
-Brightness/speed/direction are likewise NOT exposed -- on this firmware they have
-no observable effect (see LIGHTING_NOTE.md). Changes auto-apply to the mouse.
-"""
-
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QFrame, QSizePolicy, QPushButton,
-)
-
-from .. import theme
+"""Supported side-button effects, embedded in Performance and Lighting."""
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QComboBox
 from ..widgets.controls import Card
-from sm809pro import protocol as P
-from sm809pro import defaults as _D
-from ..widgets.color_picker import pick_color
-
-
-def _hline():
-    f = QFrame()
-    f.setProperty("sep", "true")
-    f.setFrameShape(QFrame.NoFrame)
-    return f
+from sm809pro import protocol as P, defaults as D
 
 
 class LightingPanel(QWidget):
-    """Side-button lighting: a single mode selector (auto-applies)."""
-    # (mode:int, color:(r,g,b)) -- color is kept for the device call but the
-    # single-color modes use predefined colors on this firmware.
     apply_requested = Signal(int, tuple)
 
     def __init__(self, mode=None, color=None):
         super().__init__()
         self._suspend = False
-        self.is_custom = False
-        self._mode = _D.LIGHTING_MODE if mode is None else mode
-        self._color = tuple(color) if color else tuple(_D.LIGHTING_COLOR)
-
+        self.is_custom = False  # compatibility with v3 profiles; custom RGB removed
+        self._color = tuple(color or D.LIGHTING_COLOR)
         root = QVBoxLayout(self)
-        root.setContentsMargins(28, 24, 28, 24)
-        root.setSpacing(18)
-
-        title = QLabel("Lighting")
-        title.setProperty("panelTitle", "true")
-        root.addWidget(title)
-        sub = QLabel("Side-button lighting effect.")
-        sub.setProperty("panelSubtitle", "true")
-        root.addWidget(sub)
-        root.addWidget(_hline())
-
-        # --- Effect card: mode dropdown ---
-        card = Card("SIDE BUTTON LIGHTING")
-        mode_col = QVBoxLayout()
-        mode_col.setSpacing(6)
-        mlabel = QLabel("Effect")
-        mlabel.setProperty("cardHint", "true")
-        mode_col.addWidget(mlabel)
+        root.setContentsMargins(0, 0, 0, 0)
+        card = Card("SIDE BUTTON LIGHTING", "Choose an effect. Solid colours are limited to red, green and blue.")
         self.mode_combo = QComboBox()
-        for m in sorted(P.LIGHTING_MODES):
-            self.mode_combo.addItem(P.LIGHTING_MODES[m], m)
-        self.mode_combo.addItem("Custom colour (experimental)", 100)
-        self.mode_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        for mode_id, label in sorted(P.LIGHTING_MODES.items()):
+            self.mode_combo.addItem(label, mode_id)
+        self.mode_combo.setToolTip("Change the side-button lighting effect. This mouse supports preset colours, not custom RGB.")
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
-        mode_col.addWidget(self.mode_combo)
-        self.color_button = QPushButton("Choose custom colour")
-        self.color_button.clicked.connect(self._choose_color)
-        mode_col.addWidget(self.color_button)
-        self.custom_note = QLabel("Custom RGB depends on mouse firmware. Some versions use a preset colour instead.")
-        self.custom_note.setWordWrap(True)
-        self.custom_note.setProperty("cardHint", "true")
-        mode_col.addWidget(self.custom_note)
-        card.add(mode_col)
+        card.add(self.mode_combo)
         root.addWidget(card)
-        root.addStretch(1)
+        self.set_state(D.LIGHTING_MODE if mode is None else mode, color)
 
-        self._load(self._mode)
+    def _on_mode_changed(self, _index):
+        if not self._suspend:
+            self.apply_requested.emit(self.mode_combo.currentData(), self._color)
 
-    # -- helpers --------------------------------------------------------------
-    def _load(self, mode):
+    def set_state(self, mode, color=None, custom=False):
+        """Old custom profiles load as their underlying preset, without writing."""
         self._suspend = True
         try:
-            idx = self.mode_combo.findData(100 if self.is_custom else mode)
-            if idx >= 0:
-                self.mode_combo.setCurrentIndex(idx)
-            self._mode = mode
+            self._color = tuple(color or D.LIGHTING_COLOR)
+            self.mode_combo.setCurrentIndex(max(0, self.mode_combo.findData(mode)))
         finally:
             self._suspend = False
-
-    # -- events ---------------------------------------------------------------
-    def _on_mode_changed(self, _idx):
-        if self._suspend:
-            return
-        if self.mode_combo.currentData() == 100:
-            self._choose_color()
-            return
-        self.is_custom = False
-        self._mode = self.mode_combo.currentData()
-        self.apply_requested.emit(self._mode, self._color)
-
-    def _choose_color(self):
-        color = pick_color(self._color, self.window())
-        if color is None:
-            self._load(self._mode)
-            return
-        self._color = tuple(color)
-        self.is_custom = True
-        self._load(8)
-        self.color_button.setText("Custom colour: #{:02X}{:02X}{:02X}".format(*color))
-        self.apply_requested.emit(8, self._color)
-
-    # -- external -------------------------------------------------------------
-    def set_state(self, mode, color=None, custom=False):
-        """Load mode from outside (e.g. factory restore) without applying."""
-        if color:
-            self._color = tuple(color)
-        self.is_custom = custom
-        self.color_button.setText("Custom colour: #{:02X}{:02X}{:02X}".format(*self._color) if custom else "Choose custom colour")
-        self._load(mode)

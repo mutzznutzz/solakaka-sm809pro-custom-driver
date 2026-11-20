@@ -89,12 +89,14 @@ class StageRow(QFrame):
 
         # enable toggle
         self.toggle = QCheckBox()
+        self.toggle.setToolTip("Include this stage when cycling DPI with the mouse buttons. Disabled stages are skipped.")
         self.toggle.setChecked(enabled)
         self.toggle.toggled.connect(self._on_toggle)
         lay.addWidget(self.toggle)
 
         # slider
         self.slider = QSlider(Qt.Horizontal)
+        self.slider.setToolTip("DPI controls pointer sensitivity. Higher DPI moves the pointer farther for the same mouse movement.")
         self.slider.setMinimum(DPI_MIN)
         self.slider.setMaximum(DPI_MAX)
         self.slider.setSingleStep(DPI_STEP)
@@ -117,6 +119,7 @@ class StageRow(QFrame):
 
         # color swatch
         self.swatch = Swatch(rgb)
+        self.swatch.setToolTip("Choose the indicator colour for this DPI stage. This is separate from side-button lighting.")
         self.swatch.changed.connect(self.edited.emit)
         lay.addWidget(self.swatch)
 

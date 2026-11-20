@@ -14,7 +14,7 @@ WIRELESS_PIDS = frozenset((PID_WIRELESS, PID_WIRELESS_809F))
 PID_WIRED = 0x026E           # USB wired
 PID_WIRED_809E = 0x809E      # Robin's USB-cable SM809 Pro, revision 0109
 WIRED_PIDS = frozenset((PID_WIRED, PID_WIRED_809E))
-# (anything else on this VID = Bluetooth)
+# Unknown Elan PIDs are not proof of Bluetooth; see device.classify_connection.
 
 # --- Report IDs / framing ---------------------------------------------------
 REPORT_ID_CMD = 0x06          # SetFeature (write) + GetFeature (ACK/idle poll)

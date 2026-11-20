@@ -23,7 +23,7 @@ import time
 from PySide6.QtCore import QObject, Signal
 
 from sm809pro import SM809Pro
-from sm809pro.device import detect_modes
+from sm809pro.device import detect_modes, choose_mode
 from sm809pro.status import StatusListener
 
 
@@ -181,30 +181,14 @@ class DeviceController(QObject):
         # Periodic mode & liveness check (every 1.5s)
         if now - self._last_mode_check >= 1.5:
             self._last_mode_check = now
-            conn = self._dev.connection
-
-            # If connected via 2.4GHz dongle, but mouse is reported offline (link==0):
-            # check if mouse has connected via Bluetooth!
-            if conn == "2.4GHz" and self._status and self._status._alive is False:
-                modes = detect_modes(self._dev.vid)
-                if any(m["connection"] == "bluetooth" for m in modes):
-                    # Mouse switched to Bluetooth! Tear down 2.4GHz so next cycle connects BT
-                    self._teardown_device()
-                    return
-
-            # If connected via Bluetooth:
-            # 1. Check if wired USB cable was plugged in (wired takes priority)
-            # 2. Check if device is still present in detect_modes()
-            if conn == "bluetooth":
-                modes = detect_modes(self._dev.vid)
-                if any(m["connection"] == "wired" for m in modes):
-                    # Wired cable attached! Switch to wired
-                    self._teardown_device()
-                    return
-                if not any(m["connection"] == "bluetooth" for m in modes):
-                    # Bluetooth disconnected / went to sleep
-                    self._teardown_device()
-                    return
+            modes = detect_modes(self._dev.vid)
+            chosen = choose_mode(modes)
+            current = (self._dev.vid, self._dev.pid, self._dev.connection)
+            target = ((chosen.get("vid", self._dev.vid), chosen["pid"], chosen["connection"])
+                      if chosen else None)
+            if target != current:
+                self._teardown_device()
+                return
 
     def _teardown_device(self):
         was_connected = self._is_connected

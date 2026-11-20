@@ -51,6 +51,7 @@ class AutoSwitchPanel(QWidget):
         # enable card
         enable_card = Card("Enable")
         self.enable_check = QCheckBox("Enable auto-switch")
+        self.enable_check.setToolTip("Apply a matching profile when you focus an app. With no match, return to your manually selected profile. Keep this app running in the tray.")
         self.enable_check.toggled.connect(self._on_enable)
         enable_card.add(self.enable_check)
         hint = QLabel("When on, the active profile follows the foreground app. With "
@@ -92,6 +93,7 @@ class AutoSwitchPanel(QWidget):
         add_btn.clicked.connect(self._add)
         detect_btn = QPushButton("Detect app (3s)…")
         detect_btn.clicked.connect(self._detect)
+        detect_btn.setToolTip("Switch to the app you want within three seconds. Its executable and window title will be detected for a profile rule.")
         rm_btn = QPushButton("Remove selected")
         rm_btn.clicked.connect(self._remove)
         btn_row.addWidget(add_btn)

@@ -195,6 +195,7 @@ class _ComboEditor(QWidget):
         key_row.addWidget(self.key, 1)
 
         self.detect_btn = QPushButton("Detect Key")
+        self.detect_btn.setToolTip("Click, then press the key or shortcut you want the mouse button to send.")
         self.detect_btn.setCheckable(True)
         self.detect_btn.setToolTip("Click, then press any key on your keyboard to auto-select it")
         self.detect_btn.clicked.connect(self._toggle_detect)
@@ -356,6 +357,7 @@ class _MacroEditor(QWidget):
         lay.addWidget(self.macro)
         lay.addWidget(QLabel("Play mode"))
         self.mode = QComboBox()
+        self.mode.setToolTip("Repeat while held stops on release. Play N times runs a fixed count. Toggle starts on one press and stops on the next.")
         self.mode.addItem("Repeat while held", 1)
         self.mode.addItem("Play N times", 2)
         self.mode.addItem("Toggle on/off", 4)   # playmode 4 = toggle (CONFIRMED pcap; not 3)

@@ -51,6 +51,27 @@ def _has_command_interface(devs) -> bool:
     return any(d.get("usage_page") == 0x000A for d in devs)
 
 
+def is_mouse_interface(info, vid=P.VID):
+    """Sharing Elan's VID is insufficient: laptop touchpads use it too."""
+    if info.get("bus_type") in (3, 4):  # HIDAPI I2C / SPI, not this mouse
+        return False
+    known = info.get("vendor_id", vid) == vid and info.get("product_id") in (P.WIRED_PIDS | P.WIRELESS_PIDS)
+    name = " ".join(str(info.get(k) or "") for k in ("product_string", "manufacturer_string")).lower()
+    return known or "sm809" in name or "solakaka" in name
+
+
+def classify_connection(vid, pid, devs):
+    """Use observed transport; never label an unknown Elan product Bluetooth."""
+    paths = " ".join(str(d.get("path", "")).lower() for d in devs)
+    if any(d.get("bus_type") == 2 for d in devs) or "bthledevice" in paths or "bthenum" in paths:
+        return "bluetooth"
+    if vid == P.VID and pid in P.WIRED_PIDS:
+        return "wired"
+    if vid == P.VID and pid in P.WIRELESS_PIDS:
+        return "2.4GHz"
+    return "unknown"
+
+
 def detect_modes(vid=P.VID):
     """
     Enumerate every connection mode currently present for the device.
@@ -60,21 +81,13 @@ def detect_modes(vid=P.VID):
     where `connection` is "2.4GHz"/"wired"/"bluetooth"/"unknown" and
     `configurable` is True if the report-6 command interface is present.
 
-    2.4GHz (0x026F) and wired (0x026E) are known PIDs. Anything else on the
-    Elan VID (or devices matching SM809/Solakaka) is reported as bluetooth.
+    Known mouse PIDs and named SM809/Solakaka interfaces only. Bluetooth must
+    have transport evidence. Unrelated Elan touchpads must never be opened.
     """
     if hid is None:
         return []
     out = []
     seen = set()
-
-    def classify(v, p):
-        if v == vid:
-            if p in P.WIRELESS_PIDS:
-                return "2.4GHz"
-            if p in P.WIRED_PIDS:
-                return "wired"
-        return "bluetooth"
 
     # Known PIDs first, then any other PID under the target VID (catches standard BT)
     all_devs = hid.enumerate(vid, 0)
@@ -86,12 +99,13 @@ def detect_modes(vid=P.VID):
             continue
         seen.add((vid, pid))
         devs = hid.enumerate(vid, pid)
+        devs = [d for d in devs if is_mouse_interface(d, vid)]
         if not devs:
             continue
         out.append({
             "vid": vid,
             "pid": pid,
-            "connection": classify(vid, pid),
+            "connection": classify_connection(vid, pid, devs),
             "configurable": _has_command_interface(devs),
             "devs": devs,
         })
@@ -110,12 +124,12 @@ def detect_modes(vid=P.VID):
         mfg = (d.get("manufacturer_string") or "").lower()
         if "sm809" in prod or "solakaka" in prod or "sm809" in mfg or "solakaka" in mfg:
             seen.add((v, p))
-            devs = hid.enumerate(v, p)
+            devs = [item for item in hid.enumerate(v, p) if is_mouse_interface(item, vid)]
             if devs:
                 out.append({
                     "vid": v,
                     "pid": p,
-                    "connection": classify(v, p),
+                    "connection": classify_connection(v, p, devs),
                     "configurable": _has_command_interface(devs),
                     "devs": devs,
                 })
@@ -185,6 +199,7 @@ class SM809Pro:
         # If the caller forced a specific PID, honor it directly.
         if self.pid is not None:
             devs = hid.enumerate(self.vid, self.pid)
+            devs = [d for d in devs if is_mouse_interface(d)]
             if not devs:
                 self.last_error = f"PID {self.pid:#06x} not found."
                 return False
@@ -216,9 +231,7 @@ class SM809Pro:
                                configurable=self.configurable)
 
     def _open_devs(self, devs, pid, connection=None, configurable=True) -> bool:
-        self.connection = connection or (
-            "2.4GHz" if pid in P.WIRELESS_PIDS
-            else "wired" if pid in P.WIRED_PIDS else "bluetooth")
+        self.connection = connection or classify_connection(self.vid, pid, devs)
         self.configurable = configurable
         tgt = pick_control_interface(devs)
         self.interface_info = tgt

@@ -56,7 +56,7 @@ from sm809pro import actions as A
 
 w = MainWindow()
 check("MainWindow builds", w is not None)
-check("nav has 7 items", w.nav.count() == 7)
+check("nav has 6 items", w.nav.count() == 6)
 check("macro panel at stack index 1", w.stack.widget(1) is w.macro_panel)
 check("apply/resolve handlers exist",
       hasattr(w, "_apply_buttons") and hasattr(w, "_resolve_bindings"))
@@ -308,7 +308,7 @@ w3._select_profile(note["id"])     # leaving game -> game is most-recent in MRU
 check("MRU tracks last profile set", w3._profile_mru[0] == game["id"])
 
 # Profiles tab: listed, sortable, reorder drives auto-switch priority
-check("profiles panel at stack index 6", w3.stack.widget(6) is w3.profiles_panel)
+check("profiles panel at stack index 5", w3.stack.widget(5) is w3.profiles_panel)
 w3.profiles_panel.set_profiles(w3.profiles.all(), w3.profiles.active_id, "custom")
 check("profiles panel lists all", w3.profiles_panel.list.count() == len(w3.profiles.all()))
 w3._on_profile_sort("az")
@@ -348,8 +348,8 @@ check("path distinguishes same exe (miss)",
               "client-win64-shipping.exe", "", "D:/Steam/GameB/client-win64-shipping.exe"))
 
 # Auto-Switch panel is wired into the nav + stack
-check("nav has 7 items (Auto-Switch + Profiles)", w3.nav.count() == 7)
-check("auto-switch panel at stack index 5", w3.stack.widget(5) is w3.autoswitch_panel)
+check("nav has 6 items (combined Performance and Lighting)", w3.nav.count() == 6)
+check("auto-switch panel at stack index 4", w3.stack.widget(4) is w3.autoswitch_panel)
 w3.autoswitch_panel.set_profiles(w3.profiles.all(), game["id"])
 check("panel lists all profiles", w3.autoswitch_panel.profile_combo.count() == len(w3.profiles.all()))
 

@@ -18,11 +18,19 @@ SVG = '''<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBo
 <path d="M104 159l24-22 24 22m-48 22 24-22 24 22" fill="none" stroke="#29d9eb" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>'''
 
+TRAY_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+<defs><radialGradient id="halo"><stop offset="0%" stop-color="#29d9eb" stop-opacity="0.5"/><stop offset="100%" stop-color="#29d9eb" stop-opacity="0"/></radialGradient></defs>
+{back}<rect x="30" y="10" width="196" height="236" rx="88" fill="#182735" stroke="#eafaff" stroke-width="14"/>
+<path d="M128 18v94M39 112h178" stroke="#36c5f0" stroke-width="9"/>
+<rect x="112" y="42" width="32" height="54" rx="15" fill="#ff7134"/>
+</svg>'''
+
 def make(name, tray=False):
     back = '<circle cx="128" cy="128" r="128" fill="url(#halo)"/>' if tray else '<rect x="5" y="5" width="246" height="246" rx="54" fill="#0e1720"/>'
-    svg = SVG.replace('{back}', back)
+    artwork = TRAY_SVG if tray else SVG
+    svg = artwork.replace('{back}', back)
     (ROOT / (name + '.svg')).write_text(svg, encoding='utf-8')
-    renderer = QSvgRenderer(SVG.replace('{back}', '' if tray else back).encode())
+    renderer = QSvgRenderer(artwork.replace('{back}', '' if tray else back).encode())
     entries, payloads = [], []
     sizes = (16, 20, 24, 32, 48, 64, 128, 256)
     offset = 6 + 16 * len(sizes)
