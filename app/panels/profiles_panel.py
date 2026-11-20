@@ -37,6 +37,8 @@ class ProfilesPanel(QWidget):
     rename_requested = Signal()
     delete_requested = Signal()
     import_requested = Signal()
+    backup_requested = Signal()
+    restore_requested = Signal()
 
     def __init__(self):
         super().__init__()
@@ -94,6 +96,22 @@ class ProfilesPanel(QWidget):
             btns.addWidget(b)
         btns.addStretch(1)
         lay.addLayout(btns)
+
+        backups = QHBoxLayout()
+        self.backup_btn = QPushButton('Back up all settings...')
+        self.backup_btn.setToolTip('Export every profile, macro, auto-switch rule and app preference into one portable backup file.')
+        self.backup_btn.clicked.connect(self.backup_requested)
+        self.restore_btn = QPushButton('Restore backup...')
+        self.restore_btn.setToolTip('Replace all profiles, macros and app preferences from a backup. A recovery copy is saved first.')
+        self.restore_btn.clicked.connect(self.restore_requested)
+        backups.addWidget(self.backup_btn)
+        backups.addWidget(self.restore_btn)
+        backups.addStretch(1)
+        lay.addLayout(backups)
+        hint = QLabel('Autosave keeps current edits. A backup is a separate recovery copy. Windows-wide scroll settings are not included.')
+        hint.setProperty('cardHint', 'true')
+        hint.setWordWrap(True)
+        lay.addWidget(hint)
 
     # -- external -------------------------------------------------------------
     def set_profiles(self, profiles, active_id, sort_key="custom"):

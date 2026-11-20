@@ -32,6 +32,7 @@ On disk: {"active": <id|None>, "profiles": [ <profile>, ... ]}.
 import json
 import os
 import uuid
+from .persistence import atomic_json
 
 from sm809pro import defaults as D
 
@@ -119,12 +120,13 @@ class ProfileStore:
 
     def save(self):
         try:
-            os.makedirs(os.path.dirname(self.path), exist_ok=True)
-            with open(self.path, "w", encoding="utf-8") as f:
-                json.dump({"active": self._active, "profiles": self._profiles,
-                           "settings": self._settings}, f, indent=2)
-        except Exception:
-            pass
+            atomic_json(self.path, {"active": self._active, "profiles": self._profiles,
+                                    "settings": self._settings})
+            self.last_save_error = None
+            return True
+        except Exception as error:
+            self.last_save_error = str(error)
+            return False
 
     # -- app-level settings ---------------------------------------------------
     def get_setting(self, key, default=None):

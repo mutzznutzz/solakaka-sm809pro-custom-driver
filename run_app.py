@@ -21,6 +21,7 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 from app import theme
 from app.main_window import MainWindow, app_icon
+from app.identity import APP_NAME, APP_VERSION
 
 _INSTANCE_KEY = "SM809Pro_single_instance"
 
@@ -68,7 +69,8 @@ def main():
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
     app = QApplication(sys.argv)
-    app.setApplicationName("SM809 Pro")
+    app.setApplicationName(APP_NAME)
+    app.setApplicationVersion(APP_VERSION)
     app.setWindowIcon(app_icon())
 
     # if we're a second launch, surface the running instance and quit

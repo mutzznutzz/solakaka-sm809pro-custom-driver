@@ -9,7 +9,12 @@ including battery % and online/offline state.
 Nav order (user-chosen): Buttons, Macro, DPI, Lighting, Performance.
 """
 
-from PySide6.QtCore import Qt, QTimer
+import copy
+import datetime
+import os
+import platform
+from collections import deque
+from PySide6.QtCore import Qt, QTimer, qVersion
 from PySide6.QtGui import QAction, QIcon, QPixmap, QPainter, QColor, QGuiApplication
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QListWidget,
@@ -35,10 +40,13 @@ from .widgets.overlay import Overlay, AlertOverlay, POSITIONS, POSITION_LABELS
 from .paths import resource_path
 from .widgets.action_picker import set_macro_resolver
 from .dpi_state import enabled_indices, wire_config
+from .identity import APP_NAME, APP_VERSION
+from .panels.about_panel import AboutPanel
+from . import backup
 
 # nav order requested by the user
 NAV_ITEMS = ["Buttons", "Macro", "DPI", "Performance and Lighting", "Auto-Switch",
-             "Profiles"]
+             "Profiles", "About"]
 
 
 def app_icon():
@@ -72,7 +80,7 @@ class TopBar(QFrame):
         lay.setContentsMargins(20, 0, 20, 0)
         lay.setSpacing(12)
 
-        self.name = QLabel("SOLAKAKA SM809 Pro - Custom Driver")
+        self.name = QLabel(APP_NAME)
         self.name.setObjectName("deviceName")
         lay.addWidget(self.name)
 
@@ -198,7 +206,7 @@ class TopBar(QFrame):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("SOLAKAKA SM809 Pro - Custom Driver")
+        self.setWindowTitle(APP_NAME)
         self.setWindowIcon(app_icon())
         self.resize(1000, 680)
         self.setMinimumSize(820, 560)
@@ -215,6 +223,9 @@ class MainWindow(QMainWindow):
         self._current_config = None
         self._loading_profile = False
         self._profile_mru = []      # recently-active profile ids (most-recent first)
+        self._undo_history = {}
+        self._recent_errors = deque(maxlen=20)
+        self._device_busy = False
 
         self.topbar = TopBar()
         outer.addWidget(self.topbar)
@@ -259,7 +270,15 @@ class MainWindow(QMainWindow):
         rail_lay.addWidget(sep)
         rail_lay.addSpacing(10)
 
+        self.undo_btn = QPushButton('Undo setting change')
+        self.undo_btn.setFixedWidth(192)
+        self.undo_btn.setEnabled(False)
+        self.undo_btn.setToolTip('Undo the last setting change in the displayed profile. Up to 20 changes per profile, this session. Macro editing, factory resets and profile deletion are not included.')
+        self.undo_btn.clicked.connect(self._undo_setting)
+        rail_lay.addWidget(self.undo_btn, 0, Qt.AlignHCenter)
+
         self.reset_btn = QPushButton("Reset to Factory")
+        self.reset_btn.setToolTip('Restore factory mouse settings. Use Undo for a recent setting edit, or restore a backup to recover saved profiles and macros.')
         self.reset_btn.setObjectName("resetBtn")
         self.reset_btn.clicked.connect(self._confirm_reset)
         rail_lay.addWidget(self.reset_btn, 0)
@@ -283,12 +302,14 @@ class MainWindow(QMainWindow):
         self.lighting_panel = self.performance_panel.lighting_panel
         self.autoswitch_panel = AutoSwitchPanel()
         self.profiles_panel = ProfilesPanel()
+        self.about_panel = AboutPanel()
         self.stack.addWidget(self.buttons_panel)         # 0 Buttons
         self.stack.addWidget(self.macro_panel)            # 1 Macro
         self.stack.addWidget(self.dpi_panel)              # 2 DPI
         self.stack.addWidget(self.performance_panel)      # 3 Performance and Lighting
         self.stack.addWidget(self.autoswitch_panel)       # 4 Auto-Switch
         self.stack.addWidget(self.profiles_panel)         # 5 Profiles
+        self.stack.addWidget(self.about_panel)            # 6 About
         self.nav.setCurrentRow(0)
 
         # ---- controller ----
@@ -305,6 +326,7 @@ class MainWindow(QMainWindow):
         self.ctrl.command_done.connect(self._on_command_done)
         self.ctrl.busy_changed.connect(self.topbar.set_busy)
         self.ctrl.busy_changed.connect(self._on_busy_overlay)
+        self.ctrl.busy_changed.connect(lambda busy: setattr(self, '_device_busy', busy))
 
         self.dpi_panel.apply_requested.connect(self._apply_dpi)
         self.dpi_panel.active_dpi_requested.connect(self._apply_active_dpi)
@@ -327,6 +349,9 @@ class MainWindow(QMainWindow):
         self.profiles_panel.rename_requested.connect(self._profile_rename)
         self.profiles_panel.delete_requested.connect(self._profile_delete)
         self.profiles_panel.import_requested.connect(self._profile_import_psf)
+        self.profiles_panel.backup_requested.connect(self._backup_all)
+        self.profiles_panel.restore_requested.connect(self._restore_all)
+        self.about_panel.refresh_requested.connect(self._refresh_diagnostics)
 
         self._charging = False
         self._connection_mode = None
@@ -399,6 +424,8 @@ class MainWindow(QMainWindow):
     def _on_nav(self, row):
         if 0 <= row < self.stack.count():
             self.stack.setCurrentIndex(row)
+            if self.stack.currentWidget() is getattr(self, 'about_panel', None):
+                self._refresh_diagnostics()
 
     # -- profiles -------------------------------------------------------------
     def _build_profile_bar(self):
@@ -508,6 +535,7 @@ class MainWindow(QMainWindow):
             self._overlay_pending = True
         self._prev_overlay_pid = pid
         self.apply_profile(prof["config"])
+        self._sync_undo()
 
     def _overlay_flash(self):
         """Flash the overlay showing every ENABLED field's current value."""
@@ -590,7 +618,7 @@ class MainWindow(QMainWindow):
         stateful device). `force=True` pushes everything (used on connect, where
         the device state is unknown)."""
         old = None if force else self._current_config
-        self._current_config = dict(config)
+        self._current_config = copy.deepcopy(config)
         self._seed_panels(config)              # always refresh the UI (cheap, no I/O)
 
         def changed(section):
@@ -658,9 +686,134 @@ class MainWindow(QMainWindow):
         button bindings + every other setting survive restarts."""
         if self._current_config is None or self._loading_profile:
             return
-        self._current_config[section] = value
-        if self.profiles.active_id:
-            self.profiles.set_config(self.profiles.active_id, self._current_config)
+        pid = self._edit_profile_id()
+        if self._current_config.get(section) == value:
+            return
+        history = self._undo_history.setdefault(pid, [])
+        history.append(copy.deepcopy(self._current_config))
+        del history[:-20]
+        self._current_config[section] = copy.deepcopy(value)
+        if pid:
+            self.profiles.set_config(pid, self._current_config)
+        self._sync_undo()
+
+    def _edit_profile_id(self):
+        pid = getattr(self, '_applied_id', None)
+        return pid if self.profiles.get(pid) else self.profiles.active_id
+
+    def _sync_undo(self):
+        self.undo_btn.setEnabled(bool(self._undo_history.get(self._edit_profile_id())))
+
+    def _flush_pending_settings(self):
+        for timer, emit in ((self.dpi_panel._apply_timer, self.dpi_panel._emit_apply),
+                            (self.performance_panel._power_timer, self.performance_panel._emit_power)):
+            if timer.isActive():
+                timer.stop()
+                emit()
+
+    def _undo_setting(self):
+        self._flush_pending_settings()
+        pid = self._edit_profile_id()
+        history = self._undo_history.get(pid, [])
+        if history:
+            previous = history.pop()
+            self.profiles.set_config(pid, previous)
+            self.apply_profile(previous)
+            self._sync_undo()
+
+    def _backup_all(self):
+        self._flush_pending_settings()
+        path, _ = QFileDialog.getSaveFileName(self, 'Back up all settings',
+            'SM809-Control-Centre-' + datetime.date.today().isoformat() + '.sm809backup',
+            'Control Centre backup (*.sm809backup)')
+        if not path:
+            return
+        if not path.lower().endswith('.sm809backup'):
+            path += '.sm809backup'
+        try:
+            backup.write(path, backup.snapshot(self.profiles, self.store))
+            QMessageBox.information(self, 'Backup saved', 'All profiles, macros and app preferences were saved to:\n' + path)
+        except Exception as error:
+            QMessageBox.warning(self, 'Backup failed', str(error))
+
+    def _restore_all(self):
+        self._flush_pending_settings()
+        was_enabled = self._auto.is_enabled()
+        self._auto._timer.stop()  # pause without switching the active profile
+        restored = False
+        try:
+            path, _ = QFileDialog.getOpenFileName(self, 'Restore all settings', '',
+                'Control Centre backup (*.sm809backup);;JSON files (*.json)')
+            if not path:
+                return
+            bundle = backup.read(path)
+            count = len(bundle['profiles']['profiles'])
+            message = f"Replace your current settings with {count} profile(s), {len(bundle['macros'])} macro(s) and the backup's app preferences?\n\nA recovery copy of your current settings will be saved first."
+            if any(isinstance(b, dict) and 'runapp' in b for p in bundle['profiles']['profiles'] for b in p['config']['buttons']):
+                message += '\n\nThis backup contains app-launch button assignments. Restore it only if you trust those assignments.'
+            if QMessageBox.question(self, 'Restore backup', message,
+                    QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel) != QMessageBox.Yes:
+                return
+            if self._device_busy or not self.ctrl._q.empty():
+                QMessageBox.information(self, 'Settings still applying', 'Wait for the current mouse changes to finish, then restore the backup again.')
+                return
+            recovery = backup.restore(bundle, self.profiles, self.store)
+            self._reload_restored_settings()
+            restored = True
+            QMessageBox.information(self, 'Backup restored', 'Profiles, macros and app preferences were restored.\n\nYour previous settings are recoverable from:\n' + str(recovery))
+        except Exception as error:
+            QMessageBox.warning(self, 'Restore failed', str(error))
+        finally:
+            if not restored and was_enabled:
+                self._auto._timer.start()
+
+    def _reload_restored_settings(self):
+        self._undo_history.clear()
+        self._profile_mru.clear()
+        self._macro_resync.stop()
+        self._auto._pending = None
+        self._auto._enabled = False
+        self.macro_panel._refresh_list()
+        self._refresh_profile_combo()
+        self._overlay_enabled = bool(self.profiles.get_setting('overlay', False))
+        self._overlay_show = dict(self.profiles.get_setting('overlay_show', {'profile': True, 'dpi': True, 'rate': False}))
+        self._apply_overlay_appearance()
+        self._sync_overlay_ui(self._overlay_enabled)
+        self.overlay.hide()
+        self.alert_overlay.hide()
+        self._current_config = None  # full application of the restored active profile
+        self._auto.set_base(self.profiles.active_id)
+        self._apply_by_id(self.profiles.active_id)
+        enabled = bool(self.profiles.get_setting('auto_switch', False))
+        self._auto.set_enabled(enabled)
+        self._sync_autoswitch_ui(enabled)
+        self._refresh_diagnostics()
+
+    def _refresh_diagnostics(self):
+        from sm809pro.device import detect_modes
+        lines = [f'{APP_NAME} {APP_VERSION}', f'System: {platform.system()} {platform.release()}',
+                 f'Python: {platform.python_version()} | Qt: {qVersion()}',
+                 'Connection: ' + str((self._connection_mode or 'unknown') if self.ctrl._is_connected else 'not connected')]
+        listener = getattr(self.ctrl, '_status', None)
+        lines.append('Mouse online: ' + str(getattr(listener, '_alive', 'not reported')))
+        try:
+            modes = detect_modes()
+            lines.append('Detected mouse interfaces:')
+            for mode in modes:
+                buses = sorted({str(d.get('bus_type', 'unknown')) for d in mode['devs']})
+                lines.append(f"  {mode['vid']:04X}:{mode['pid']:04X} | {mode['connection']} | configurable={mode['configurable']} | HID collections={len(mode['devs'])} | bus={','.join(buses)}")
+            if not modes:
+                lines.append('  None detected.')
+        except Exception as error:
+            lines.append('Enumeration failed: ' + str(error))
+        for label, store in [('Profile autosave', self.profiles), ('Macro autosave', self.store)]:
+            lines.append(label + ': ' + (getattr(store, 'last_save_error', None) or 'no write error recorded this session'))
+        lines.append('Recent communication errors (this session):')
+        lines.extend(self._recent_errors or ['  None recorded.'])
+        report = '\n'.join(lines).replace(os.path.expanduser('~'), '%USERPROFILE%')
+        report = '\n'.join(' '.join('[device path removed]' if 'hid#' in token.lower() or 'bthenum#' in token.lower() else token
+                                    for token in line.split(' ')) for line in report.split('\n'))
+        self.about_panel.set_report(report)
 
     def _profile_new(self):
         name, ok = QInputDialog.getText(self, "New profile", "Profile name:",
@@ -792,6 +945,7 @@ class MainWindow(QMainWindow):
             self.apply_profile(self._current_config, force=True)
 
     def _on_error(self, msg):
+        self._recent_errors.append(datetime.datetime.now().strftime('%H:%M:%S') + ' ' + str(msg))
         self.topbar.set_error(msg)
 
     def _on_dpi_push(self, level):
@@ -1008,8 +1162,11 @@ class MainWindow(QMainWindow):
             cfg = default_config()
             self._current_config = cfg
             self._seed_panels(cfg)
-            if self.profiles.active_id:
-                self.profiles.set_config(self.profiles.active_id, cfg)
+            pid = self._edit_profile_id()
+            self._undo_history.pop(pid, None)
+            self._sync_undo()
+            if pid:
+                self.profiles.set_config(pid, cfg)
 
     # -- auto-switch + tray ---------------------------------------------------
     def _tray_icon(self):
@@ -1036,7 +1193,7 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QApplication
         QApplication.setQuitOnLastWindowClosed(False)
         self.tray = QSystemTrayIcon(self._tray_icon(), self)
-        self.tray.setToolTip("SM809 Pro — Custom Driver")
+        self.tray.setToolTip(APP_NAME)
         menu = QMenu()
         menu.addAction("Show window", self._show_from_tray)
 

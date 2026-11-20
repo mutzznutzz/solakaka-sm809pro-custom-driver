@@ -56,7 +56,7 @@ from sm809pro import actions as A
 
 w = MainWindow()
 check("MainWindow builds", w is not None)
-check("nav has 6 items", w.nav.count() == 6)
+check("nav has 7 items including About", w.nav.count() == 7)
 check("macro panel at stack index 1", w.stack.widget(1) is w.macro_panel)
 check("apply/resolve handlers exist",
       hasattr(w, "_apply_buttons") and hasattr(w, "_resolve_bindings"))
@@ -348,7 +348,7 @@ check("path distinguishes same exe (miss)",
               "client-win64-shipping.exe", "", "D:/Steam/GameB/client-win64-shipping.exe"))
 
 # Auto-Switch panel is wired into the nav + stack
-check("nav has 6 items (combined Performance and Lighting)", w3.nav.count() == 6)
+check("nav has 7 items (combined Performance and Lighting plus About)", w3.nav.count() == 7)
 check("auto-switch panel at stack index 4", w3.stack.widget(4) is w3.autoswitch_panel)
 w3.autoswitch_panel.set_profiles(w3.profiles.all(), game["id"])
 check("panel lists all profiles", w3.autoswitch_panel.profile_combo.count() == len(w3.profiles.all()))

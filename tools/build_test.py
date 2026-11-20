@@ -15,7 +15,7 @@ def main():
         pathlib.Path(sys.executable).parent, pathlib.Path(sys.base_prefix),
         windows/'System32', windows))
     return subprocess.call([sys.executable, '-m', 'PyInstaller', '--clean',
-                            '--noconfirm', '--distpath', 'dist/feature-test-v4',
+                            '--noconfirm', '--distpath', 'dist/control-centre-v5',
                             'SM809Pro.spec'], cwd=project, env=env)
 
 

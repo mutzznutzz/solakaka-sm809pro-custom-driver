@@ -1,4 +1,15 @@
-# SM809 Pro App
+# SM809 Pro Control Centre
+
+Test fork of [lacno29's SM809 Pro custom-driver project](https://github.com/lacno29/solakaka-sm809pro-custom-driver).
+Enhancements, feature direction and hardware testing by Robin Luxton at
+MutzNutz Media and Design. Development is AI-assisted.
+
+The original project has no specified licence. This fork does not grant rights
+over the original author's code; redistribution permissions remain unconfirmed.
+
+Version 0.5.0-test adds complete settings backup/restore, profile-setting undo,
+and About/diagnostics. The hardware-tested v4 build remains the baseline.
+See [V5_NOTES.md](V5_NOTES.md) for scope, checks and usage.
 
 A lightweight, feature-rich custom desktop driver and configuration suite for the **SOLAKAKA SM809 Pro** wireless MMO gaming mouse. Built on a fully reverse-engineered HID protocol, this application provides a modern, bloat-free alternative to the official software with powerful capabilities—including seamless **per-application profile auto-switching**.
 
